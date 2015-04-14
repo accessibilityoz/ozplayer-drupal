@@ -1,0 +1,3 @@
+name = OzPlayer filter
+description = Uses the OzPlayer free version to play videos
+core = 7.x
