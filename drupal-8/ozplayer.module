@@ -1,0 +1,180 @@
+<?php
+/**
+ * @file
+ * A module to play YouTube videos with OzPlayer
+ */
+
+function ozplayer_help($path, $arg) {
+  switch ($path) {
+    case "admin/help#ozplayer":
+      return '<p>' . t("Displays YouTube videos using OzPlayer") . '</p>';
+      break;
+  }
+}
+
+function ozplayer_filter_info() {
+  
+  $filters['ozplayer'] = array(
+    'title' => t('OzPlayer Filter'),
+    'description' => t('Replace [ozplayer:...] with OzPlayer to play a video.'),
+    'prepare callback' => '_ozplayer_filter_prepare',
+    'process callback' => '_ozplayer_filter_process',
+    'tips callback' => '_ozplayer_filter_tips',
+  );
+
+  return $filters;
+}
+
+/**
+* filter prepare callback.
+*/
+function _ozplayer_filter_prepare($text, $filter) {
+  
+  return $text;
+}
+
+/**
+ * Time filter process callback.
+ */
+function _ozplayer_filter_process($text, $filter) {
+  
+  preg_match_all("/(\[)ozplayer(\|)[^\]]*(\])/s", $text, $matches);
+  $orig_match = array();
+  $html_code = array();
+  $public_uri = 'public://';
+  $width = 640;
+  $height = 360;
+  $i = 0;
+  foreach ($matches[0] as $match) {
+    $attr = array();
+    $file = array();
+    $orig_match[] = $match;
+    $match = str_replace( array('[', ']', '{', '}'), '', $match );
+    $options = explode('|', $match);
+    foreach ($options as $index => $opt) {
+        $tmp = explode(':', $opt);
+	if (isset($tmp[1])) {
+	        $attr[$tmp[0]] = trim($tmp[1]);
+	}
+    }
+    if (isset($attr['yt']) || isset($attr['mp4']) || isset($attr['webm'])) {
+        $width = (isset($attr['width'] )) ?  $attr['width'] : $width;
+        $height = (isset($attr['height'])) ?  $attr['height'] : $height;
+
+	$video_tracks = "";
+	if (isset($attr['yt'])) {
+	  $video_tracks = '<source src="' . $attr['yt'] . '" type="video/x-youtube"/>';
+	} else {
+	  if (isset($attr['mp4'])) {
+             $video_tracks = '<source src="' . $attr['mp4'] . '" type="video/mp4"/>';
+	  }
+          if (isset($attr['webm'])) {
+             $video_tracks = $video_tracks . '<source src="' . $attr['webm'] . '" type="video/webm"/>';
+          }
+	}
+
+	$captions = "";
+	if (isset($attr['captions'])) {
+	   $captions = '<track src="' . $attr['captions'] . '" kind="captions" data-sync="0" srclang="en" default="default" />';
+	}
+
+        $transcript="";
+        $d_transcript = "";
+        $transcript_id="";
+        $transcript_div="";
+        if (isset($attr['transcript'])) {
+           $transcript_id="ozplayer-video-" . $i . "-transcript";
+           $d_transcript='data-transcript="' . $transcript_id . '"';
+           $transcript='<track src="' . $attr['transcript'] . '" kind="metadata" data-kind="transcript" data-sync="0" srclang="en" />';
+           $transcript_div = '<details class="ozplayer-expander" open="open"><summary>Video Transcript</summary><div id="' . $transcript_id .'" class="ozplayer-transcript"></div></details>';
+        }
+
+	$audio = "";
+	if (isset($attr['mp3']) || isset($attr['ogg'])) {
+	   $audio = '<audio preload="none" data-default="default">';
+	   if (isset($attr['mp3'])) {
+	      $audio = $audio . '<source src="' . $attr['mp3'] . '" type="audio/mp3"/>';
+	   }
+           if (isset($attr['ogg'])) {
+              $audio = $audio . '<source src="' . $attr['ogg'] . '" type="audio/ogg"/>';
+           }
+	   $audio = $audio . "</audio>";
+        }   
+
+	$code = <<<EOT
+<figure id="ozplayer-video-$i-container" class="ozplayer-container">
+  <div data-responsive="ozplayer-video-$i-container" data-controls="stack" class="ozplayer" id="ozplayer-video-$i" $d_transcript>
+    <video width="$width" height="$height" controls="controls" preload="none">
+      $video_tracks
+      $captions
+      $transcript
+    </video>
+$audio
+  </div>
+$transcript_div
+</figure>
+EOT;
+
+	$html_code[] = $code;
+        $i++;
+     } 
+  } 
+  $text = str_replace($orig_match, $html_code, $text);
+
+  return $text;
+}
+
+/**
+*  Tips
+*/
+function _ozplayer_filter_tips($filter, $format, $long = FALSE) {
+  return t('<em>Replace [ozplayer:...]</em> with OzPlayer video.');
+} 
+
+/**
+*  Implement Hook_init
+*/
+function ozplayer_init() {
+	 ozplayer_add();
+} 
+
+function ozplayer_add($add = TRUE) {
+  static $added = FALSE;
+  if (!isset($added)) {
+    $added = &drupal_static(__FUNCTION__);
+  }
+
+  $base = "https://ozplayer.global.ssl.fastly.net/1.9/";
+
+  $directory = variable_get('videojs_directory', 'sites/all/libraries/video-js');
+
+  $extra_css="figure.ozplayer-container { width: 100%; display: block; background: none; border: none; padding: 0; margin: 0;}";
+
+  if ($add && !$added) {
+    drupal_add_js($base . 'ozplayer-core/mediaelement.min.js', array('type'=>'external', 'scope'=>'header'));
+    drupal_add_js($base . 'ozplayer-core/ozplayer.free.js', array('type'=>'external', 'scope'=>'footer'));
+    drupal_add_js($base . 'ozplayer-lang/en.js', array('type'=>'external', 'scope'=>'footer'));
+    drupal_add_js($base . 'config.js', array('type'=>'external','scope' => 'footer'));
+    drupal_add_css($base . 'ozplayer-core/ozplayer.min.css', array('type' => 'external'));
+    drupal_add_css($base . 'ozplayer-skin/highlights-blue.css', array('type' => 'external'));
+    drupal_add_css($base . 'transcript.css', array('type' => 'external'));
+    drupal_add_css($extra_css, array('type'=>'inline'));
+
+    $added = TRUE;
+  }
+
+  return array(
+    'js' => array(
+      $base . 'ozplayer-core/mediaelement.min.js' => array('type'=>'external', 'scope'=>'header'),
+      $base . 'ozplayer-core/ozplayer.free.js' => array('type'=>'external','scope'=>'footer'),
+      $base . 'ozplayer-lang/en.js' => array('type'=>'external','scope'=>'footer'),
+      $base . 'config.js' => array('type'=>'external','scope' => 'footer'), 
+    ),
+    'css' => array(
+      $base . 'ozplayer-core/ozplayer.min.css' => array('type' => 'external'),
+      $base . 'ozplayer-skin/highlights-blue.css' => array('type' => 'external'),
+      $base . 'transcript.css' => array('type' => 'external'),
+      $extra_css => array('type' => 'inline'),
+    ), 
+  );
+}
